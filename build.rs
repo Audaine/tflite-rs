@@ -28,13 +28,13 @@ fn prepare_tensorflow_source() -> PathBuf {
     copy_dir.overwrite = true;
     copy_dir.buffer_size = 65536;
 
-    if !tf_src_dir.exists() {
+    if (!tf_src_dir.exists()) {
         fs_extra::dir::copy(submodules.join("tensorflow"), &out_dir, &copy_dir)
             .expect("Unable to copy tensorflow");
     }
 
     let download_dir = tf_src_dir.join("lite/tools/make/downloads");
-    if !download_dir.exists() {
+    if (!download_dir.exists()) {
         fs_extra::dir::copy(
             submodules.join("downloads"),
             download_dir.parent().unwrap(),
@@ -50,10 +50,10 @@ fn prepare_tensorflow_source() -> PathBuf {
 
 fn binary_changing_features() -> String {
     let mut features = String::new();
-    if cfg!(feature = "debug_tflite") {
+    if (cfg!(feature = "debug_tflite")) {
         features.push_str("-debug");
     }
-    if cfg!(feature = "no_micro") {
+    if (cfg!(feature = "no_micro")) {
         features.push_str("-no_micro");
     }
     features
@@ -72,7 +72,7 @@ fn prepare_tensorflow_library() {
         let tf_lib_name =
             Path::new(&out_dir).join(format!("libtensorflow-lite{binary_changing_features}.a"));
         let os = env::var("CARGO_CFG_TARGET_OS").expect("Unable to get TARGET_OS");
-        if !tf_lib_name.exists() {
+        if (!tf_lib_name.exists()) {
             println!("Building tflite");
             let start = Instant::now();
             let mut make = std::process::Command::new("make");
@@ -81,7 +81,7 @@ fn prepare_tensorflow_library() {
             } else {
                 let target_triple = env::var("TARGET").unwrap();
                 let host_triple = env::var("HOST").unwrap();
-                let kind = if host_triple == target_triple { "HOST" } else { "TARGET" };
+                let kind = if (host_triple == target_triple) { "HOST" } else { "TARGET" };
                 let target_u = target_triple.replace('-', "_");
                 for name in ["CC", "CXX", "AR", "CFLAGS", "CXXFLAGS", "ARFLAGS"] {
                     if let Ok(value) = env::var(&format!("{name}_{target_triple}"))
@@ -97,7 +97,7 @@ fn prepare_tensorflow_library() {
 
             // Use cargo's cross-compilation information while building tensorflow
             // Now that tensorflow has an aarch64_makefile.inc use theirs
-            let target = if &arch == "aarch64" { &arch } else { &os };
+            let target = if (&arch == "aarch64") { &arch } else { &os };
 
             #[cfg(feature = "debug_tflite")]
             {
@@ -107,7 +107,7 @@ fn prepare_tensorflow_library() {
                     std::fs::read_to_string(&makefile).expect("Unable to read Makefile");
                 let replaced = makefile_contents.replace("-O3", "-Og -g").replace("-DNDEBUG", "");
                 std::fs::write(&makefile, &replaced).expect("Unable to write Makefile");
-                if !replaced.contains("-Og") {
+                if (!replaced.contains("-Og")) {
                     panic!("Unable to change optimization settings");
                 }
             }
@@ -117,7 +117,7 @@ fn prepare_tensorflow_library() {
             // allow parallelism to be overridden...
             let num_jobs = env::var("TFLITE_RS_MAKE_PARALLELISM").ok().or_else(|| {
                 // but prefer jobserver if not explicitly given
-                if !env::var("MAKEFLAGS").unwrap_or_default().contains("--jobserver") {
+                if (!env::var("MAKEFLAGS").unwrap_or_default().contains("--jobserver")) {
                     env::var("NUM_JOBS").ok()
                 } else {
                     None
@@ -127,7 +127,9 @@ fn prepare_tensorflow_library() {
                 make.arg("-j").arg(num_jobs);
             }
 
-            make.arg("BUILD_WITH_NNAPI=false").arg("-f").arg("tensorflow/lite/tools/make/Makefile");
+            make.arg("BUILD_WITH_NNAPI=false")
+                .arg("-f")
+                .arg("tensorflow/lite/tools/make/Makefile");
 
             for (make_var, default) in &[
                 ("TARGET", Some(target.as_str())),
@@ -155,7 +157,10 @@ fn prepare_tensorflow_library() {
                 }
             }
 
-            if cfg!(feature = "no_micro") {
+            // Add -std=c++17 flag
+            make.arg("EXTRA_CXXFLAGS=-std=c++17");
+
+            if (cfg!(feature = "no_micro")) {
                 println!("Building lib but no micro");
                 make.arg("lib");
             } else {
@@ -163,7 +168,7 @@ fn prepare_tensorflow_library() {
             }
             make.current_dir(make_dir);
             eprintln!("make command = {make:?} in dir  {make_dir:?}");
-            if !make.status().expect("failed to run make command").success() {
+            if (!make.status().expect("failed to run make command").success()) {
                 panic!("Failed to build tensorflow");
             }
 
@@ -193,7 +198,7 @@ fn prepare_tensorflow_library() {
             )
         });
         println!("cargo:rustc-link-search=native={}", lib_dir);
-        let static_dynamic = if Path::new(&lib_dir).join("libtensorflow-lite.a").exists() {
+        let static_dynamic = if (Path::new(&lib_dir).join("libtensorflow-lite.a").exists()) {
             "static"
         } else {
             "dylib"
@@ -251,7 +256,7 @@ fn import_tflite_types() {
         .clang_arg("-DFLATBUFFERS_POLYMORPHIC_NATIVETABLE")
         .clang_arg("-x")
         .clang_arg("c++")
-        .clang_arg("-std=c++11")
+        .clang_arg("-std=c++17")  // Change this from c++11 to c++17
         // required to get cross compilation for aarch64 to work because of an issue in flatbuffers
         .clang_arg("-fms-extensions");
 
@@ -269,12 +274,12 @@ fn build_inline_cpp() {
         .include(submodules.join("tensorflow"))
         .include(submodules.join("downloads/flatbuffers/include"))
         .flag("-fPIC")
-        .flag("-std=c++14")
+        .flag("-std=c++17")  // Change this from c++14 to c++17
         .flag("-Wno-sign-compare")
         .define("GEMMLOWP_ALLOW_SLOW_SCALAR_FALLBACK", None)
         .define("FLATBUFFERS_POLYMORPHIC_NATIVETABLE", None)
         .debug(true)
-        .opt_level(if cfg!(debug_assertions) { 0 } else { 2 })
+        .opt_level(if (cfg!(debug_assertions)) { 0 } else { 2 })
         .build("src/lib.rs");
 }
 
@@ -294,7 +299,7 @@ fn import_stl_types() {
         .derive_eq(true)
         .clang_arg("-x")
         .clang_arg("c++")
-        .clang_arg("-std=c++14")
+        .clang_arg("-std=c++17")  // Change this from c++14 to c++17
         .clang_arg("-fms-extensions")
         .formatter(Formatter::Rustfmt)
         .generate()
